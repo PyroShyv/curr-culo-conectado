@@ -28,3 +28,8 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+<!-- AGENT-MEMORY:BEGIN -->
+- Login de cuidador é CPF + senha: o CPF vira e-mail sintético `<cpf>@cpf.cuidadores.app` (src/lib/cpf.ts) com auto-confirm ligado — por isso não há recuperação de senha por e-mail.
+- Currículos ficam na tabela `curriculos` (um por usuário); só `done=true` é público. App inteiro é uma tela em src/components/CuidadoresApp.tsx com estilos em src/cuidadores.css (variáveis prefixadas `--c-` para não colidir com os tokens do shadcn).
+<!-- AGENT-MEMORY:END -->
