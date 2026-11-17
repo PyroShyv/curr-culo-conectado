@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import qrcode from "qrcode-generator";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { CurriculoImpressao, EscolherModelo, type Modelo } from "@/components/CurriculoImpressao";
 import { cpfParaLogin, cpfValido, emailValido, formatarCpf, formatarFone, soDigitos } from "@/lib/cpf";
 
 type Rec = Database["public"]["Tables"]["curriculos"]["Row"];
@@ -93,6 +94,18 @@ export function CuidadoresApp() {
   const [filtros, setFiltros] = useState({ cidade: "", habil: "", disp: "" });
   const [lista, setLista] = useState<Rec[]>([]);
   const [aviso, setAviso] = useState("");
+  const [escolhendo, setEscolhendo] = useState<Rec | null>(null);
+  const [modelo, setModelo] = useState<Modelo>("classico");
+  const [imprimindo, setImprimindo] = useState<Rec | null>(null);
+  const exportar = () => {
+    const r = escolhendo;
+    if (!r) return;
+    setEscolhendo(null);
+    setImprimindo(r);
+    const tituloAntes = document.title;
+    document.title = `Currículo - ${r.nome}`;
+    setTimeout(() => { window.print(); document.title = tituloAntes; }, 150);
+  };
   const [erro, setErro] = useState("");
   const [base, setBase] = useState("");
   const [cpf, setCpf] = useState("");
@@ -439,7 +452,7 @@ export function CuidadoresApp() {
             a.download = "qrcode-curriculo.svg";
             a.click();
           }}>Baixar QR code</button>
-          <button className="btn" type="button" onClick={() => window.print()}>Imprimir</button>
+          <button className="btn" type="button" onClick={() => rec && setEscolhendo(rec)}>Imprimir / PDF</button>
           <button className="btn sec" type="button" onClick={() => rec && verCurriculo(rec, "pronto")}>Ver meu currículo</button>
           <button className="btn sec" type="button" onClick={() => { setStep(1); setVoltou(false); ir("cadastro"); }}>Editar currículo</button>
         </div>
@@ -470,6 +483,7 @@ export function CuidadoresApp() {
           </div>
           <Chips r={r} />
         </section>
+        <div className="linha"><button className="btn" type="button" onClick={() => setEscolhendo(r)}>Baixar / imprimir PDF</button></div>
         <Bloco titulo="Contato">
           <div className="contato">
             <p><span className="eyebrow">E-mail</span><br />{r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : <span className="dica">Não informado.</span>}</p>
@@ -569,6 +583,8 @@ export function CuidadoresApp() {
         <main tabIndex={-1}><div className={`miolo${largo ? " largo" : ""}`}>{corpo}</div></main>
         <p className="rodape">Os currículos ficam salvos com segurança no nosso banco de dados. Os cuidadores marcados como exemplo são fictícios.</p>
       </div>
+      {escolhendo && <EscolherModelo r={escolhendo} modelo={modelo} setModelo={setModelo} onFechar={() => setEscolhendo(null)} onExportar={exportar} />}
+      {imprimindo && <div id="area-impressao"><CurriculoImpressao r={imprimindo} modelo={modelo} /></div>}
       {aviso && <div className="aviso" role="status" aria-live="polite">{aviso}</div>}
     </div>
   );
