@@ -137,7 +137,7 @@ export function CuidadoresApp() {
   }, [ir]);
 
   useEffect(() => {
-    setBase(location.href.split("#")[0]);
+    setBase(location.href.split("#")[0] ?? "");
     if (location.hash.slice(1) === "buscar") setView("buscar");
     carregarLista();
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
@@ -166,6 +166,7 @@ export function CuidadoresApp() {
     };
     if (imediato) return run();
     salvarT.current = setTimeout(run, 600);
+    return undefined;
   }, []);
 
   const mudar = (patch: Partial<Rec>, imediato = false) => {
@@ -193,7 +194,7 @@ export function CuidadoresApp() {
         if (/weak|pwned|leaked/i.test(up.error.message)) return setErro("Essa senha é muito fácil de adivinhar. Escolha outra.");
         return setErro("Não foi possível entrar agora. Tente novamente.");
       }
-      data = { user: up.data.user!, session: up.data.session!, weakPassword: null } as typeof data;
+      data = { user: up.data.user!, session: up.data.session!, } as unknown as typeof data;
       error = null;
     }
     setEnviando(false);
@@ -491,7 +492,7 @@ export function CuidadoresApp() {
     if (m) return m[0].trim();
     return t.length > 110 ? t.slice(0, 108).trim() + "…" : t;
   }
-  const primeiro = (t: string) => { const x = (t || "").split(/[.\n]/)[0].trim(); return x.length > 60 ? x.slice(0, 57).trim() + "…" : x; };
+  const primeiro = (t: string) => { const x = (t || "").split(/[.\n]/)[0]?.trim() ?? ""; return x.length > 60 ? x.slice(0, 57).trim() + "…" : x; };
   const formTitulo = (r: Rec) => { let best = "", bi = -1; (r.formacao_opc || []).forEach((v) => { const i = FORMACAO.indexOf(v); if (i > bi) { bi = i; best = v; } }); return best; };
 
   function telaBusca() {
