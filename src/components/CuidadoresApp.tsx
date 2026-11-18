@@ -536,6 +536,18 @@ export function CuidadoresApp() {
           {ehDono && <button className="btn sec" type="button" onClick={() => { setRec(r); setStep(1); setVoltou(false); ir("cadastro"); }}>Editar meu currículo</button>}
           <button className="btn" type="button" onClick={() => setEscolhendo(r)}>Baixar / imprimir PDF</button>
         </div>
+        <Bloco titulo="Contato">
+          <div className="contato">
+            <p><span className="eyebrow">E-mail</span><br />{r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : <span className="dica">Não informado.</span>}</p>
+            <p><span className="eyebrow">Telefone</span><br />{r.telefone ? <a href={`tel:+55${zap}`}>{r.telefone}</a> : <span className="dica">Não informado.</span>}</p>
+          </div>
+          {zap.length >= 10 && <div className="linha"><a className="btn" href={`https://wa.me/55${zap}`} target="_blank" rel="noreferrer">Chamar no WhatsApp</a>{r.email && <a className="btn sec" href={`mailto:${r.email}`}>Enviar e-mail</a>}</div>}
+        </Bloco>
+        <Bloco titulo="Sobre mim" texto={r.sobre} />
+        <Bloco titulo="Experiência profissional" texto={exp} />
+        <Bloco titulo="Formação e cursos" texto={form} />
+        <Bloco titulo="Habilidades" texto={r.habil} />
+        <Bloco titulo="Disponibilidade" texto={disp} />
         <Bloco titulo="QR code deste currículo">
           <div className="qrmini">
             <Qr texto={link} />
@@ -549,18 +561,6 @@ export function CuidadoresApp() {
             </div>
           </div>
         </Bloco>
-        <Bloco titulo="Contato">
-          <div className="contato">
-            <p><span className="eyebrow">E-mail</span><br />{r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : <span className="dica">Não informado.</span>}</p>
-            <p><span className="eyebrow">Telefone</span><br />{r.telefone ? <a href={`tel:+55${zap}`}>{r.telefone}</a> : <span className="dica">Não informado.</span>}</p>
-          </div>
-          {zap.length >= 10 && <div className="linha"><a className="btn" href={`https://wa.me/55${zap}`} target="_blank" rel="noreferrer">Chamar no WhatsApp</a>{r.email && <a className="btn sec" href={`mailto:${r.email}`}>Enviar e-mail</a>}</div>}
-        </Bloco>
-        <Bloco titulo="Sobre mim" texto={r.sobre} />
-        <Bloco titulo="Experiência profissional" texto={exp} />
-        <Bloco titulo="Formação e cursos" texto={form} />
-        <Bloco titulo="Habilidades" texto={r.habil} />
-        <Bloco titulo="Disponibilidade" texto={disp} />
       </>
     );
   }
