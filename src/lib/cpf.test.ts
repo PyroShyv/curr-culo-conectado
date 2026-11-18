@@ -1,20 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { cpfParaLogin, cpfValido, formatarCpf } from "./cpf";
+import { emailValido, formatarFone } from "./cpf";
 
-describe("login por CPF", () => {
-  it("aceita CPF válido com ou sem pontuação", () => {
-    expect(cpfValido("529.982.247-25")).toBe(true);
-    expect(cpfValido("52998224725")).toBe(true);
+describe("dados de acesso e contato", () => {
+  it("aceita um e-mail válido para o acesso", () => {
+    expect(emailValido("cuidador@email.com")).toBe(true);
+    expect(emailValido("  cuidador@email.com  ")).toBe(true);
   });
-  it("recusa CPF com dígito errado, curto ou repetido", () => {
-    expect(cpfValido("529.982.247-24")).toBe(false);
-    expect(cpfValido("1234567890")).toBe(false);
-    expect(cpfValido("111.111.111-11")).toBe(false);
+
+  it("recusa e-mail incompleto ou sem domínio", () => {
+    expect(emailValido("cuidador@")).toBe(false);
+    expect(emailValido("cuidador.email.com")).toBe(false);
   });
-  it("o mesmo CPF sempre entra na mesma conta", () => {
-    expect(cpfParaLogin("529.982.247-25")).toBe(cpfParaLogin("52998224725"));
-  });
-  it("formata enquanto digita", () => {
-    expect(formatarCpf("52998224725")).toBe("529.982.247-25");
+
+  it("formata o telefone com DDD enquanto a pessoa digita", () => {
+    expect(formatarFone("63912345678")).toBe("(63) 91234-5678");
   });
 });

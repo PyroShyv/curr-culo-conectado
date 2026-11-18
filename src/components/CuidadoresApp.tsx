@@ -3,7 +3,8 @@ import qrcode from "qrcode-generator";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { CurriculoImpressao, EscolherModelo, type Modelo } from "@/components/CurriculoImpressao";
-import { cpfParaLogin, cpfValido, emailValido, formatarCpf, formatarFone, soDigitos } from "@/lib/cpf";
+import { emailValido, formatarFone, soDigitos } from "@/lib/cpf";
+import { podeEditarCurriculo } from "@/lib/curriculo";
 
 type Rec = Database["public"]["Tables"]["curriculos"]["Row"];
 type View = "inicio" | "cadastro" | "pronto" | "curriculo" | "buscar";
@@ -85,7 +86,7 @@ function Bloco({ titulo, texto, children }: { titulo: string; texto?: string; ch
 export function CuidadoresApp() {
   const [view, setView] = useState<View>("inicio");
   const [userId, setUserId] = useState<string | null>(null);
-  const [cpfLogado, setCpfLogado] = useState("");
+  const [emailLogado, setEmailLogado] = useState("");
   const [rec, setRec] = useState<Rec | null>(null);
   const [step, setStep] = useState(1);
   const [voltou, setVoltou] = useState(false);
@@ -108,8 +109,10 @@ export function CuidadoresApp() {
   };
   const [erro, setErro] = useState("");
   const [base, setBase] = useState("");
-  const [cpf, setCpf] = useState("");
+  const [acesso, setAcesso] = useState<"entrar" | "criar">("entrar");
+  const [emailLogin, setEmailLogin] = useState("");
   const [senha, setSenha] = useState("");
+  const [cadastroEnviado, setCadastroEnviado] = useState("");
   const [enviando, setEnviando] = useState(false);
   const fotoRef = useRef<HTMLInputElement>(null);
   const salvarT = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -133,10 +136,10 @@ export function CuidadoresApp() {
     if (!error && data) setLista(data);
   }, []);
 
-  const carregarMeu = useCallback(async (uid: string, entrouAgora: boolean) => {
+  const carregarMeu = useCallback(async (uid: string, entrouAgora: boolean, email?: string | null) => {
     let { data } = await supabase.from("curriculos").select("*").eq("user_id", uid).maybeSingle();
     if (!data) {
-      const ins = await supabase.from("curriculos").insert({ user_id: uid }).select("*").single();
+      const ins = await supabase.from("curriculos").insert({ user_id: uid, email: email || "" }).select("*").single();
       if (ins.error) { mostrarAviso("Não foi possível criar seu cadastro. Tente de novo."); return; }
       data = ins.data;
       setVoltou(false);
@@ -155,14 +158,14 @@ export function CuidadoresApp() {
     carregarLista();
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       setUserId(session?.user.id ?? null);
-      setCpfLogado(session?.user.email?.split("@")[0] ?? "");
+      setEmailLogado(session?.user.email ?? "");
       if (!session) setRec(null);
     });
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) {
         setUserId(data.user.id);
-        setCpfLogado(data.user.email?.split("@")[0] ?? "");
-        carregarMeu(data.user.id, false);
+        setEmailLogado(data.user.email ?? "");
+        carregarMeu(data.user.id, false, data.user.email);
       }
     });
     return () => sub.subscription.unsubscribe();
@@ -194,31 +197,50 @@ export function CuidadoresApp() {
   async function entrar(e: FormEvent) {
     e.preventDefault();
     setErro("");
-    if (!cpfValido(cpf)) return setErro("Digite um CPF válido, por exemplo 123.456.789-09.");
+    setCadastroEnviado("");
+    const email = emailLogin.trim().toLowerCase();
+    if (!emailValido(email)) return setErro("Digite um e-mail válido, por exemplo voce@email.com.");
     if (senha.length < 6) return setErro("A senha precisa ter pelo menos 6 caracteres.");
     setEnviando(true);
-    const email = cpfParaLogin(cpf);
-    let { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
-    if (error) {
-      const up = await supabase.auth.signUp({ email, password: senha });
-      if (up.error) {
-        setEnviando(false);
-        if (/already|registered|exists/i.test(up.error.message)) return setErro("Senha incorreta para este CPF.");
-        if (/weak|pwned|leaked/i.test(up.error.message)) return setErro("Essa senha é muito fácil de adivinhar. Escolha outra.");
-        return setErro("Não foi possível entrar agora. Tente novamente.");
+
+    if (acesso === "criar") {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: senha,
+        options: { emailRedirectTo: window.location.origin },
+      });
+      setEnviando(false);
+      if (error) {
+        if (/email address is not allowed/i.test(error.message)) return setErro("Esse e-mail não é aceito. Use um endereço real que você consiga abrir.");
+        if (/already|registered|exists/i.test(error.message)) return setErro("Este e-mail já tem cadastro. Escolha “Entrar” e use sua senha.");
+        if (/weak|pwned|leaked/i.test(error.message)) return setErro("Essa senha é muito fácil de adivinhar. Escolha outra.");
+        return setErro("Não foi possível criar sua conta agora. Tente novamente.");
       }
-      data = { user: up.data.user!, session: up.data.session!, } as unknown as typeof data;
-      error = null;
+      setSenha("");
+      if (data.session?.user) {
+        await carregarMeu(data.session.user.id, true, email);
+      } else {
+        setCadastroEnviado(email);
+      }
+      return;
     }
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password: senha });
     setEnviando(false);
+    if (error) {
+      if (/email.*confirm|confirm.*email/i.test(error.message)) return setErro("Confirme seu e-mail antes de entrar. Procure nossa mensagem na sua caixa de entrada e no spam.");
+      if (/invalid|credentials|password/i.test(error.message)) return setErro("E-mail ou senha incorretos. Confira os dados e tente de novo.");
+      return setErro("Não foi possível entrar agora. Tente novamente.");
+    }
     setSenha("");
-    if (data.user) await carregarMeu(data.user.id, true);
+    if (data.user) await carregarMeu(data.user.id, true, email);
   }
 
   async function sair() {
     await supabase.auth.signOut();
     setRec(null);
-    setCpf("");
+    setEmailLogin("");
+    setCadastroEnviado("");
     ir("inicio");
   }
 
@@ -277,7 +299,7 @@ export function CuidadoresApp() {
           <p className="apoio">Cadastre seu currículo para apresentar suas qualificações e disponibilidade às famílias.</p>
           <p className="nota">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#29483D" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
-            Seu CPF e sua senha são a chave do seu cadastro.
+            Seu e-mail e sua senha são a chave do seu cadastro.
           </p>
           {base && (
             <aside className="card desk qrmini" aria-labelledby="t-qr">
@@ -297,28 +319,33 @@ export function CuidadoresApp() {
           {userId && rec ? (
             <>
               <h2 id="t-form" className="h2g">Olá{rec.nome ? `, ${rec.nome.split(" ")[0]}` : ""}!</h2>
-              <p className="dica">Você entrou com o CPF {formatarCpf(cpfLogado)}.</p>
+              <p className="dica">Você entrou com o e-mail {emailLogado}.</p>
               <div className="linha">
-                <button className="btn" type="button" onClick={() => { setVoltou(false); ir("cadastro"); }}>Continuar meu currículo</button>
+                <button className="btn" type="button" onClick={() => { setStep(rec.done ? 1 : rec.passo || 1); setVoltou(false); ir("cadastro"); }}>{rec.done ? "Editar meu currículo" : "Continuar meu currículo"}</button>
                 <button className="btn sec" type="button" onClick={sair}>Sair</button>
               </div>
             </>
           ) : (
             <>
               <h2 id="t-form" className="h2g">Vamos começar?</h2>
+              <div className="linha" role="group" aria-label="Entrar ou criar conta">
+                <button className={`btn peq${acesso === "entrar" ? "" : " sec"}`} type="button" aria-pressed={acesso === "entrar"} onClick={() => { setAcesso("entrar"); setErro(""); setCadastroEnviado(""); }}>Entrar</button>
+                <button className={`btn peq${acesso === "criar" ? "" : " sec"}`} type="button" aria-pressed={acesso === "criar"} onClick={() => { setAcesso("criar"); setErro(""); setCadastroEnviado(""); }}>Criar conta</button>
+              </div>
               <form onSubmit={entrar} noValidate style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div className="campo">
-                  <label htmlFor="cpf">Seu CPF</label>
-                  <input id="cpf" type="text" inputMode="numeric" autoComplete="username" placeholder="123.456.789-09" maxLength={14} value={cpf} onChange={(e) => setCpf(formatarCpf(e.target.value))} />
+                  <label htmlFor="email-acesso">Seu e-mail</label>
+                  <input id="email-acesso" type="email" inputMode="email" autoComplete="email" placeholder="voce@email.com" value={emailLogin} onChange={(e) => setEmailLogin(e.target.value)} />
                 </div>
                 <div className="campo">
                   <label htmlFor="senha">Senha</label>
-                  <input id="senha" type="password" autoComplete="current-password" placeholder="Pelo menos 6 caracteres" value={senha} onChange={(e) => setSenha(e.target.value)} />
-                  <p className="dica" style={{ marginTop: 6 }}>Primeira vez? Escolha uma senha e seu cadastro será criado. Já tem cadastro? Use a mesma senha para continuar de onde parou.</p>
+                  <input id="senha" type="password" autoComplete={acesso === "entrar" ? "current-password" : "new-password"} placeholder="Pelo menos 6 caracteres" value={senha} onChange={(e) => setSenha(e.target.value)} />
+                  <p className="dica" style={{ marginTop: 6 }}>{acesso === "entrar" ? "Use o e-mail e a senha do seu cadastro para continuar de onde parou." : "Escolha uma senha. Depois, confirme seu e-mail pelo link que vamos enviar."}</p>
                 </div>
                 <p className="erro" role="alert">{erro}</p>
-                <button className="btn" type="submit" disabled={enviando}>{enviando ? "Entrando…" : "Entrar"}</button>
+                <button className="btn" type="submit" disabled={enviando}>{enviando ? "Aguarde…" : acesso === "entrar" ? "Entrar" : "Criar minha conta"}</button>
               </form>
+              {cadastroEnviado && <p className="nota" role="status">Enviamos um link de confirmação para {cadastroEnviado}. Abra seu e-mail e clique no link para ativar sua conta.</p>}
             </>
           )}
           <hr className="div" />
@@ -395,11 +422,6 @@ export function CuidadoresApp() {
           {Texto({ f: "bairro", rotulo: "Bairro" })}
           {Texto({ f: "email", rotulo: "E-mail para contato", tipo: "email", extra: { autoComplete: "email", placeholder: "seuemail@exemplo.com" } })}
           {Texto({ f: "telefone", rotulo: "Telefone para contato", tipo: "tel", extra: { autoComplete: "tel", inputMode: "tel", placeholder: "(63) 91234-5678", maxLength: 16 } })}
-          <div className="campo">
-            <label htmlFor="f-cpf">CPF de identificação</label>
-            <input id="f-cpf" type="text" readOnly value={formatarCpf(cpfLogado)} />
-            <p className="dica" style={{ marginTop: 6 }}>Serve só para entrar no seu cadastro. Não aparece no currículo.</p>
-          </div>
           <p className="dica full">O e-mail e o telefone aparecem no seu currículo para as famílias entrarem em contato.</p>
         </>
       );
@@ -468,11 +490,12 @@ export function CuidadoresApp() {
     const disp = juntar([(r.disp_opc || []).join(", "), r.disp]);
     const local = [r.cidade, r.bairro].filter(Boolean).join(" · ");
     const zap = soDigitos(r.telefone);
+    const ehDono = podeEditarCurriculo(userId, r);
     return (
       <>
         <div><button className="btn sec peq" type="button" onClick={() => ir(origem === "pronto" && rec ? "pronto" : origem === "buscar" ? "buscar" : "inicio")}>← Voltar</button></div>
         <section className="card verde" aria-labelledby="t-cv">
-          <div className="cv-topo"><span className="eyebrow">Currículo digital</span><span className="status"><i className="ponto" />{r.exemplo ? "Exemplo fictício" : "Perfil público"}</span></div>
+          <div className="cv-topo"><span className="eyebrow">Currículo digital</span><span className="status"><i className="ponto" />Perfil público</span></div>
           <div className="perfil">
             <Avatar r={r} cls="gr" />
             <div>
@@ -483,7 +506,10 @@ export function CuidadoresApp() {
           </div>
           <Chips r={r} />
         </section>
-        <div className="linha"><button className="btn" type="button" onClick={() => setEscolhendo(r)}>Baixar / imprimir PDF</button></div>
+        <div className="linha">
+          {ehDono && <button className="btn sec" type="button" onClick={() => { setRec(r); setStep(1); setVoltou(false); ir("cadastro"); }}>Editar meu currículo</button>}
+          <button className="btn" type="button" onClick={() => setEscolhendo(r)}>Baixar / imprimir PDF</button>
+        </div>
         <Bloco titulo="Contato">
           <div className="contato">
             <p><span className="eyebrow">E-mail</span><br />{r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : <span className="dica">Não informado.</span>}</p>
@@ -535,7 +561,7 @@ export function CuidadoresApp() {
                   const best = formTitulo(r), sub = primeiro(r.cursos);
                   return (
                     <article className="card cv" key={r.id}>
-                      <div className="cv-topo"><span className="eyebrow">Currículo digital</span><span className="status"><i className="ponto" />{r.exemplo ? "Exemplo fictício" : "Perfil público"}</span></div>
+                      <div className="cv-topo"><span className="eyebrow">Currículo digital</span><span className="status"><i className="ponto" />Perfil público</span></div>
                       <div className="cv-perfil"><Avatar r={r} cls="peq" /><div style={{ minWidth: 0 }}><h2>{r.nome}</h2><p className="papel"><i className="ponto q" />Cuidador de idosos{r.cidade ? ` · ${r.cidade}` : ""}</p></div></div>
                       <hr className="div" />
                       <div><p className="eyebrow">Disponibilidade</p><Chips r={r} /></div>
@@ -581,7 +607,7 @@ export function CuidadoresApp() {
           </nav>
         </header>
         <main tabIndex={-1}><div className={`miolo${largo ? " largo" : ""}`}>{corpo}</div></main>
-        <p className="rodape">Os currículos ficam salvos com segurança no nosso banco de dados. Os cuidadores marcados como exemplo são fictícios.</p>
+        <p className="rodape">Os currículos ficam salvos com segurança no nosso banco de dados.</p>
       </div>
       {escolhendo && <EscolherModelo r={escolhendo} modelo={modelo} setModelo={setModelo} onFechar={() => setEscolhendo(null)} onExportar={exportar} />}
       {imprimindo && <div id="area-impressao"><CurriculoImpressao r={imprimindo} modelo={modelo} /></div>}

@@ -30,6 +30,6 @@ use the editor.
 <!-- LOVABLE:END -->
 
 <!-- AGENT-MEMORY:BEGIN -->
-- Login de cuidador é CPF + senha: o CPF vira e-mail sintético `<cpf>@cpf.cuidadores.app` (src/lib/cpf.ts) com auto-confirm ligado — por isso não há recuperação de senha por e-mail.
+- Login de cuidador é e-mail + senha, com confirmação de e-mail; o currículo usa o e-mail da conta como contato inicial.
 - Currículos ficam na tabela `curriculos` (um por usuário); só `done=true` é público. App inteiro é uma tela em src/components/CuidadoresApp.tsx com estilos em src/cuidadores.css (variáveis prefixadas `--c-` para não colidir com os tokens do shadcn).
 <!-- AGENT-MEMORY:END -->
