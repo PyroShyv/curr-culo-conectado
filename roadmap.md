@@ -7,3 +7,4 @@
 - [x] Criar as contas e publicar os sete currículos enviados.
 - [x] Criar a conta privada de Wendell, sem currículo visível na busca.
 - [x] Conferir os acessos e a lista pública de cuidadores.
+- [x] Criar link e QR code individuais, abrindo diretamente cada currículo público.

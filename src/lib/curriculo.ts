@@ -4,3 +4,7 @@ export function podeEditarCurriculo(
 ) {
   return Boolean(userId && curriculo.user_id === userId);
 }
+
+export function linkCurriculo(base: string, id: string) {
+  return `${base.split("#")[0]}#curriculo=${encodeURIComponent(id)}`;
+}

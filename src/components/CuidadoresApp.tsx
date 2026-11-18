@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { CurriculoImpressao, EscolherModelo, type Modelo } from "@/components/CurriculoImpressao";
 import { emailValido, formatarFone, soDigitos } from "@/lib/cpf";
-import { podeEditarCurriculo } from "@/lib/curriculo";
+import { linkCurriculo, podeEditarCurriculo } from "@/lib/curriculo";
 
 type Rec = Database["public"]["Tables"]["curriculos"]["Row"];
 type View = "inicio" | "cadastro" | "pronto" | "curriculo" | "buscar";
@@ -36,6 +36,20 @@ function qrSvg(texto: string) {
 function Qr({ texto }: { texto: string }) {
   const s = useMemo(() => qrSvg(texto), [texto]);
   return s ? <div className="qr" dangerouslySetInnerHTML={{ __html: s }} /> : <div className="qr"><p className="centro dica">Não foi possível gerar o QR code agora.</p></div>;
+}
+
+function baixarQr(texto: string, nome: string) {
+  const svg = qrSvg(texto);
+  if (!svg) return false;
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `qrcode-${nome.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "curriculo"}.svg`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  return true;
 }
 
 function Avatar({ r, cls = "" }: { r: Pick<Rec, "foto" | "nome">; cls?: string }) {
@@ -153,7 +167,20 @@ export function CuidadoresApp() {
 
   useEffect(() => {
     setBase(location.href.split("#")[0] ?? "");
-    if (location.hash.slice(1) === "buscar") setView("buscar");
+    const hash = location.hash.slice(1);
+    if (hash.startsWith("curriculo=")) {
+      const id = decodeURIComponent(hash.slice("curriculo=".length));
+      void supabase.from("curriculos").select("*").eq("id", id).eq("done", true).maybeSingle().then(({ data }) => {
+        if (data) {
+          setVendo(data);
+          setOrigem("inicio");
+          setView("curriculo");
+        } else {
+          setView("buscar");
+          mostrarAviso("Este currículo não está disponível. Veja os cuidadores na busca.");
+        }
+      });
+    } else if (hash === "buscar") setView("buscar");
     carregarLista();
     const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
       setUserId(session?.user.id ?? null);
@@ -284,7 +311,14 @@ export function CuidadoresApp() {
   const abaAtiva = view === "buscar" || (view === "curriculo" && origem === "buscar") ? "buscar" : "inicio";
   const largo = view === "inicio" || view === "buscar";
 
-  function verCurriculo(r: Rec, o: View) { setVendo(r); setOrigem(o); ir("curriculo"); }
+  function verCurriculo(r: Rec, o: View) {
+    setVendo(r);
+    setOrigem(o);
+    setView("curriculo");
+    setErro("");
+    history.replaceState(null, "", `#curriculo=${encodeURIComponent(r.id)}`);
+    window.scrollTo(0, 0);
+  }
 
   /* ---------- telas ---------- */
   function telaInicio() {
@@ -456,21 +490,15 @@ export function CuidadoresApp() {
   }
 
   function telaPronto() {
-    const link = base + "#buscar";
+    const link = linkCurriculo(base, rec!.id);
     return (
       <section className="card centro" aria-labelledby="t-pronto">
         <h1 id="t-pronto" className="h1m">Seu currículo está pronto!</h1>
         <Qr texto={link} />
-        <p className="apoio"><strong>Mostre este QR code para as famílias conhecerem seu perfil.</strong></p>
+        <p className="apoio"><strong>Mostre este QR code para as famílias abrirem diretamente o seu currículo.</strong></p>
         <div className="linha">
-          <button className="btn" type="button" onClick={() => {
-            const svg = qrSvg(link);
-            if (!svg) return;
-            const a = document.createElement("a");
-            a.href = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-            a.download = "qrcode-curriculo.svg";
-            a.click();
-          }}>Baixar QR code</button>
+          <button className="btn" type="button" onClick={() => { if (!baixarQr(link, rec!.nome)) mostrarAviso("Não foi possível baixar o QR code."); }}>Baixar QR code</button>
+          <button className="btn sec" type="button" onClick={() => navigator.clipboard?.writeText(link).then(() => mostrarAviso("Link do currículo copiado."), () => mostrarAviso("Não foi possível copiar."))}>Copiar link</button>
           <button className="btn" type="button" onClick={() => rec && setEscolhendo(rec)}>Imprimir / PDF</button>
           <button className="btn sec" type="button" onClick={() => rec && verCurriculo(rec, "pronto")}>Ver meu currículo</button>
           <button className="btn sec" type="button" onClick={() => { setStep(1); setVoltou(false); ir("cadastro"); }}>Editar currículo</button>
@@ -487,6 +515,7 @@ export function CuidadoresApp() {
     const disp = juntar([(r.disp_opc || []).join(", "), r.disp]);
     const local = [r.cidade, r.bairro].filter(Boolean).join(" · ");
     const zap = soDigitos(r.telefone);
+    const link = linkCurriculo(base, r.id);
     const ehDono = podeEditarCurriculo(userId, r);
     return (
       <>
@@ -507,6 +536,19 @@ export function CuidadoresApp() {
           {ehDono && <button className="btn sec" type="button" onClick={() => { setRec(r); setStep(1); setVoltou(false); ir("cadastro"); }}>Editar meu currículo</button>}
           <button className="btn" type="button" onClick={() => setEscolhendo(r)}>Baixar / imprimir PDF</button>
         </div>
+        <Bloco titulo="QR code deste currículo">
+          <div className="qrmini">
+            <Qr texto={link} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0, flex: 1 }}>
+              <p>Aponte a câmera do celular para abrir diretamente o currículo de <strong>{r.nome}</strong>.</p>
+              <div className="link-copia">
+                <code>{link}</code>
+                <button className="btn peq sec" type="button" onClick={() => navigator.clipboard?.writeText(link).then(() => mostrarAviso("Link do currículo copiado."), () => mostrarAviso("Não foi possível copiar."))}>Copiar link</button>
+              </div>
+              <button className="btn sec" type="button" onClick={() => { if (!baixarQr(link, r.nome)) mostrarAviso("Não foi possível baixar o QR code."); }}>Baixar QR code</button>
+            </div>
+          </div>
+        </Bloco>
         <Bloco titulo="Contato">
           <div className="contato">
             <p><span className="eyebrow">E-mail</span><br />{r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : <span className="dica">Não informado.</span>}</p>
