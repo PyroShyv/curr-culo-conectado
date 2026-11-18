@@ -109,7 +109,6 @@ export function CuidadoresApp() {
   };
   const [erro, setErro] = useState("");
   const [base, setBase] = useState("");
-  const [acesso, setAcesso] = useState<"entrar" | "criar">("entrar");
   const [emailLogin, setEmailLogin] = useState("");
   const [senha, setSenha] = useState("");
   const [cadastroEnviado, setCadastroEnviado] = useState("");
@@ -194,8 +193,7 @@ export function CuidadoresApp() {
     });
   };
 
-  async function entrar(e: FormEvent) {
-    e.preventDefault();
+  async function autenticar(modo: "entrar" | "criar") {
     setErro("");
     setCadastroEnviado("");
     const email = emailLogin.trim().toLowerCase();
@@ -203,7 +201,7 @@ export function CuidadoresApp() {
     if (senha.length < 6) return setErro("A senha precisa ter pelo menos 6 caracteres.");
     setEnviando(true);
 
-    if (acesso === "criar") {
+    if (modo === "criar") {
       const { data, error } = await supabase.auth.signUp({
         email,
         password: senha,
@@ -328,22 +326,21 @@ export function CuidadoresApp() {
           ) : (
             <>
               <h2 id="t-form" className="h2g">Vamos começar?</h2>
-              <div className="linha" role="group" aria-label="Entrar ou criar conta">
-                <button className={`btn peq${acesso === "entrar" ? "" : " sec"}`} type="button" aria-pressed={acesso === "entrar"} onClick={() => { setAcesso("entrar"); setErro(""); setCadastroEnviado(""); }}>Entrar</button>
-                <button className={`btn peq${acesso === "criar" ? "" : " sec"}`} type="button" aria-pressed={acesso === "criar"} onClick={() => { setAcesso("criar"); setErro(""); setCadastroEnviado(""); }}>Criar conta</button>
-              </div>
-              <form onSubmit={entrar} noValidate style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <form onSubmit={(e) => { e.preventDefault(); void autenticar("entrar"); }} noValidate style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div className="campo">
                   <label htmlFor="email-acesso">Seu e-mail</label>
                   <input id="email-acesso" type="email" inputMode="email" autoComplete="email" placeholder="voce@email.com" value={emailLogin} onChange={(e) => setEmailLogin(e.target.value)} />
                 </div>
                 <div className="campo">
                   <label htmlFor="senha">Senha</label>
-                  <input id="senha" type="password" autoComplete={acesso === "entrar" ? "current-password" : "new-password"} placeholder="Pelo menos 6 caracteres" value={senha} onChange={(e) => setSenha(e.target.value)} />
-                  <p className="dica" style={{ marginTop: 6 }}>{acesso === "entrar" ? "Use o e-mail e a senha do seu cadastro para continuar de onde parou." : "Escolha uma senha. Depois, confirme seu e-mail pelo link que vamos enviar."}</p>
+                  <input id="senha" type="password" autoComplete="current-password" placeholder="Pelo menos 6 caracteres" value={senha} onChange={(e) => setSenha(e.target.value)} />
+                  <p className="dica" style={{ marginTop: 6 }}>Use sua senha para entrar ou escolha uma senha para criar sua conta.</p>
                 </div>
                 <p className="erro" role="alert">{erro}</p>
-                <button className="btn" type="submit" disabled={enviando}>{enviando ? "Aguarde…" : acesso === "entrar" ? "Entrar" : "Criar minha conta"}</button>
+                <div className="linha" role="group" aria-label="Entrar ou criar conta">
+                  <button className="btn" type="submit" disabled={enviando}>{enviando ? "Aguarde…" : "Entrar"}</button>
+                  <button className="btn sec" type="button" disabled={enviando} onClick={() => void autenticar("criar")}>{enviando ? "Aguarde…" : "Criar conta"}</button>
+                </div>
               </form>
               {cadastroEnviado && <p className="nota" role="status">Enviamos um link de confirmação para {cadastroEnviado}. Abra seu e-mail e clique no link para ativar sua conta.</p>}
             </>
