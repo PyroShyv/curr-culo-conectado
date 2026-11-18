@@ -32,25 +32,127 @@ function Classico({ r }: { r: Rec }) {
 }
 
 function Minimalista({ r }: { r: Rec }) {
-  const contato = [r.telefone, r.email, [r.bairro, r.cidade].filter(Boolean).join(", ")].filter((x) => t(x));
-  const resumo = [t(r.tempo) && r.tempo !== "Sem experiência profissional" ? `${r.tempo} de experiência no cuidado de idosos.` : "", t(r.sobre)].filter(Boolean).join(" ");
-  const comps = t(r.habil).split(/[,;\n]+/).map((s) => s.trim().replace(/\.$/, "")).filter(Boolean);
-  const adicionais = [t(r.certs) && ["Certificações", t(r.certs)], t(r.form_extra) && ["Outras informações", t(r.form_extra)], ((r.disp_opc || []).length || t(r.disp)) && ["Disponibilidade", [(r.disp_opc || []).join(", "), t(r.disp)].filter(Boolean).join(". ")]].filter(Boolean) as [string, string][];
+  const local = [r.cidade, r.bairro].filter(Boolean).join(", ");
+  const contato = [r.telefone && `Tel.: ${r.telefone}`, r.email, local].filter(Boolean);
+  const tempoExp = t(r.tempo) && r.tempo !== "Sem experiência profissional" ? r.tempo : "";
+
+  // Resumo profissional: combina tempo, sobre, qualidades
+  const partesTempo = tempoExp ? `Profissional com ${tempoExp.toLowerCase()} de experiência no cuidado de idosos.` : "";
+  const resumo = [partesTempo, t(r.sobre)].filter(Boolean).join(" ").trim();
+
+  // Competências: quebra por vírgula, ponto-e-vírgula ou nova linha
+  const comps = t(r.habil)
+    .split(/[,;\n]+/)
+    .map((s) => s.trim().replace(/\.$/, ""))
+    .filter(Boolean);
+
+  // Atividades na experiência: quebra o texto em tópicos (linhas ou pontos)
+  const expLinhas = t(r.exp)
+    .split(/\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // Cursos como lista
+  const cursosLista = t(r.cursos)
+    .split(/[;\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  // Certificações como lista
+  const certsLista = t(r.certs)
+    .split(/[;\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const dispTexto = [(r.disp_opc || []).join(", "), t(r.disp)].filter(Boolean).join(". ");
+
   return (
     <div className="cvm">
+      {/* ─── Cabeçalho ─── */}
       <header className="cvm-topo">
-        <div>
-          <h1>{r.nome}</h1>
-          <p className="cvm-cargo">Cuidador(a) de idosos</p>
-          <p className="cvm-contato">{contato.join("  ·  ")}</p>
+        <div style={{ flex: 1 }}>
+          <h1>{r.nome || "Nome completo"}</h1>
+          <p className="cvm-cargo">Cuidador(a) de Idosos</p>
+          <div className="cvm-contato-lista">
+            {contato.map((c, i) => <span key={i}>{c}</span>)}
+          </div>
         </div>
         {r.foto && <img src={r.foto} alt="" className="cvm-foto" />}
       </header>
-      {resumo && <section><h2>Resumo profissional</h2><p>{resumo}</p></section>}
-      {comps.length > 0 && <section><h2>Competências</h2><p>{comps.join("  •  ")}</p></section>}
-      {(t(r.exp) || t(r.tempo)) && <section><h2>Experiência profissional</h2>{t(r.tempo) && <p className="cvm-cargo">Cuidador(a) de idosos · {r.tempo}</p>}{t(r.exp) && <p>{r.exp}</p>}</section>}
-      {((r.formacao_opc || []).length > 0 || t(r.cursos)) && <section><h2>Formação acadêmica</h2>{(r.formacao_opc || []).length > 0 && <p><b>{r.formacao_opc.join(", ")}</b></p>}{t(r.cursos) && <p className="cvm-peq">Cursos: {r.cursos}</p>}</section>}
-      {adicionais.length > 0 && <section><h2>Informações adicionais</h2>{adicionais.map(([k, v]) => <p key={k} className="cvm-peq"><b>{k}:</b> {v}</p>)}</section>}
+
+      {/* ─── Resumo profissional ─── */}
+      {resumo && (
+        <section className="cvm-sec">
+          <h2 className="cvm-titulo-sec">Resumo Profissional</h2>
+          <p className="cvm-resumo">{resumo}</p>
+        </section>
+      )}
+
+      {/* ─── Competências ─── */}
+      {comps.length > 0 && (
+        <section className="cvm-sec">
+          <h2 className="cvm-titulo-sec">Competências</h2>
+          <ul className="cvm-comps">
+            {comps.map((c, i) => <li key={i}>{c}</li>)}
+          </ul>
+        </section>
+      )}
+
+      {/* ─── Experiência profissional ─── */}
+      {(expLinhas.length > 0 || tempoExp) && (
+        <section className="cvm-sec">
+          <h2 className="cvm-titulo-sec">Experiência Profissional</h2>
+          <div className="cvm-exp-bloco">
+            <p className="cvm-exp-cargo">Cuidador(a) de Idosos</p>
+            {tempoExp && <p className="cvm-exp-periodo">{tempoExp}</p>}
+            {expLinhas.length > 0 && (
+              <ul className="cvm-atividades">
+                {expLinhas.map((linha, i) => <li key={i}>{linha}</li>)}
+              </ul>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ─── Formação acadêmica ─── */}
+      {((r.formacao_opc || []).length > 0 || cursosLista.length > 0) && (
+        <section className="cvm-sec">
+          <h2 className="cvm-titulo-sec">Formação Acadêmica</h2>
+          {(r.formacao_opc || []).map((f, i) => (
+            <p key={i} className="cvm-form-item"><strong>{f}</strong></p>
+          ))}
+          {cursosLista.map((c, i) => (
+            <p key={i} className="cvm-form-curso">{c}</p>
+          ))}
+        </section>
+      )}
+
+      {/* ─── Informações adicionais ─── */}
+      {(certsLista.length > 0 || t(r.form_extra) || dispTexto) && (
+        <section className="cvm-sec">
+          <h2 className="cvm-titulo-sec">Informações Adicionais</h2>
+          {certsLista.length > 0 && (
+            <div className="cvm-adicional-grupo">
+              <p className="cvm-adicional-rotulo">Certificações</p>
+              <ul className="cvm-adicional-lista">
+                {certsLista.map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </div>
+          )}
+          {t(r.form_extra) && (
+            <div className="cvm-adicional-grupo">
+              <p className="cvm-adicional-rotulo">Outras informações</p>
+              <p className="cvm-adicional-texto">{t(r.form_extra)}</p>
+            </div>
+          )}
+          {dispTexto && (
+            <div className="cvm-adicional-grupo">
+              <p className="cvm-adicional-rotulo">Disponibilidade</p>
+              <p className="cvm-adicional-texto">{dispTexto}</p>
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }
@@ -60,7 +162,7 @@ export function CurriculoImpressao({ r, modelo }: { r: Rec; modelo: Modelo }) {
 }
 
 export function EscolherModelo({ r, modelo, setModelo, onFechar, onExportar }: { r: Rec; modelo: Modelo; setModelo: (m: Modelo) => void; onFechar: () => void; onExportar: () => void }) {
-  const ops: [Modelo, string, string][] = [["classico", "Clássico", "Visual do site, com tons de verde e foto em destaque."], ["minimalista", "Minimalista profissional", "Uma coluna, limpo e objetivo, bom para empresas."]];
+  const ops: [Modelo, string, string][] = [["classico", "Clássico", "Visual do site, tons de verde e foto em destaque."], ["minimalista", "Minimalista Profissional", "Azul-marinho e dourado, ATS-friendly, lista de competências e atividades em tópicos."]];
   return (
     <div className="modal-fundo" role="dialog" aria-modal="true" aria-labelledby="t-modelo" onClick={onFechar}>
       <div className="card modal" onClick={(e) => e.stopPropagation()}>
