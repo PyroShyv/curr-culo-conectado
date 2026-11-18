@@ -4,3 +4,6 @@
 - [x] Remover todos os currículos de exemplo e a conta/currículo de Wendell.
 - [x] Mostrar edição apenas ao dono do currículo e permitir salvar as alterações.
 - [x] Atualizar textos e testes, verificar o fluxo no navegador e salvar as alterações.
+- [x] Criar as contas e publicar os sete currículos enviados.
+- [x] Criar a conta privada de Wendell, sem currículo visível na busca.
+- [x] Conferir os acessos e a lista pública de cuidadores.
