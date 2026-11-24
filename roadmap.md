@@ -8,3 +8,8 @@
 - [x] Criar a conta privada de Wendell, sem currículo visível na busca.
 - [x] Conferir os acessos e a lista pública de cuidadores.
 - [x] Criar link e QR code individuais, abrindo diretamente cada currículo público.
+- [ ] Tornar a conta de Wendell administradora e criar painel para contas, currículos e administradores.
+- [ ] Adicionar dois modelos comuns, manter foto opcional e compartilhamento por link.
+- [ ] Reforçar salvamento automático e manter contato somente por WhatsApp.
+- [ ] Testar permissões e os fluxos de administração e currículo.
+- [ ] Comunidade: etapa futura, aguardando solicitação de implementação.

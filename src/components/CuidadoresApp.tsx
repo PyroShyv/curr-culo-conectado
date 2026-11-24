@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import qrcode from "qrcode-generator";
+import { Link } from "@tanstack/react-router";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { CurriculoImpressao, EscolherModelo, type Modelo } from "@/components/CurriculoImpressao";
 import { emailValido, formatarFone, soDigitos } from "@/lib/cpf";
-import { linkCurriculo, podeEditarCurriculo } from "@/lib/curriculo";
+import { linkCurriculo, linkWhatsapp, podeEditarCurriculo } from "@/lib/curriculo";
+import { Autosalvador, type EstadoSalvamento } from "@/lib/autosalvar";
 
 type Rec = Database["public"]["Tables"]["curriculos"]["Row"];
 type View = "inicio" | "cadastro" | "pronto" | "curriculo" | "buscar";
@@ -72,11 +75,13 @@ function lerFoto(file: File): Promise<string | null> {
     fr.onload = () => {
       const img = new Image();
       img.onload = () => {
-        const k = Math.min(1, 280 / Math.max(img.width, img.height));
+        const k = Math.min(1, 640 / Math.max(img.width, img.height));
         const c = document.createElement("canvas");
         c.width = Math.round(img.width * k);
         c.height = Math.round(img.height * k);
-        c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+        const ctx = c.getContext("2d");
+        if (!ctx) { ok(null); return; }
+        ctx.drawImage(img, 0, 0, c.width, c.height);
         ok(c.toDataURL("image/jpeg", 0.8));
       };
       img.onerror = () => ok(null);
@@ -101,6 +106,8 @@ export function CuidadoresApp() {
   const [view, setView] = useState<View>("inicio");
   const [userId, setUserId] = useState<string | null>(null);
   const [emailLogado, setEmailLogado] = useState("");
+  const [admin, setAdmin] = useState(false);
+  const [estadoSalvo, setEstadoSalvo] = useState<EstadoSalvamento>("salvo");
   const [rec, setRec] = useState<Rec | null>(null);
   const [step, setStep] = useState(1);
   const [voltou, setVoltou] = useState(false);
@@ -128,7 +135,7 @@ export function CuidadoresApp() {
   const [cadastroEnviado, setCadastroEnviado] = useState("");
   const [enviando, setEnviando] = useState(false);
   const fotoRef = useRef<HTMLInputElement>(null);
-  const salvarT = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const salvador = useRef<Autosalvador<Rec> | null>(null);
   const avisoT = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const mostrarAviso = (m: string) => {
@@ -162,6 +169,16 @@ export function CuidadoresApp() {
       setStep(data.done ? 1 : data.passo || 1);
     }
     setRec(data);
+    try {
+      const cache = localStorage.getItem(`curriculo-rascunho:${uid}`);
+      if (cache) {
+        const draft = JSON.parse(cache) as { r: Rec; alterado: number };
+        if (draft.r.id === data.id && draft.r.user_id === uid && draft.alterado > Date.parse(data.updated_at)) {
+          setRec(draft.r);
+          salvar(draft.r);
+        } else localStorage.removeItem(`curriculo-rascunho:${uid}`);
+      }
+    } catch { /* A disabled local cache must not prevent account access. */ }
     if (entrouAgora) ir("cadastro");
   }, [ir]);
 
@@ -197,27 +214,50 @@ export function CuidadoresApp() {
     return () => sub.subscription.unsubscribe();
   }, [carregarLista, carregarMeu]);
 
-  // grava alterações no banco (com pequeno atraso para não salvar a cada letra)
+  useEffect(() => {
+    setAdmin(false);
+    if (!userId) return;
+    let ativo = true;
+    void supabase.rpc("has_role", { _user_id: userId, _role: "admin" }).then(({ data, error }) => {
+      if (ativo) setAdmin(!error && Boolean(data));
+    });
+    return () => { ativo = false; };
+  }, [userId]);
+
+  // Keep a per-owner recovery copy until the latest serialized write succeeds.
   const salvar = useCallback((r: Rec, imediato = false) => {
-    clearTimeout(salvarT.current);
-    const run = async () => {
-      const { id, user_id, exemplo, created_at, updated_at, ...campos } = r;
-      void user_id; void exemplo; void created_at; void updated_at;
-      const { error } = await supabase.from("curriculos").update(campos).eq("id", id);
-      if (error) mostrarAviso("Não foi possível salvar agora. Verifique sua internet.");
-    };
-    if (imediato) return run();
-    salvarT.current = setTimeout(run, 600);
-    return undefined;
+    try { localStorage.setItem(`curriculo-rascunho:${r.user_id}`, JSON.stringify({ r, alterado: Date.now() })); } catch { /* Storage may be unavailable. */ }
+    if (!salvador.current) {
+      salvador.current = new Autosalvador(async (valor) => {
+        const { id, user_id, exemplo, created_at, updated_at, ...campos } = valor;
+        void exemplo; void created_at; void updated_at;
+        if (!user_id) throw new Error("Currículo sem dono");
+        const { error } = await supabase.from("curriculos").update(campos).eq("id", id).eq("user_id", user_id).select("id").single();
+        if (error) throw error;
+        try {
+          const key = `curriculo-rascunho:${user_id}`;
+          const cache = localStorage.getItem(key);
+          if (cache && JSON.stringify((JSON.parse(cache) as { r: Rec }).r) === JSON.stringify(valor)) localStorage.removeItem(key);
+        } catch { /* Preserve cached data if cleanup is unavailable. */ }
+      }, setEstadoSalvo);
+    }
+    return salvador.current.agendar(r, imediato);
+  }, []);
+
+  useEffect(() => {
+    const flush = () => { void salvador.current?.flush(); };
+    const ocultou = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("online", flush);
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", ocultou);
+    return () => { flush(); window.removeEventListener("online", flush); window.removeEventListener("pagehide", flush); document.removeEventListener("visibilitychange", ocultou); };
   }, []);
 
   const mudar = (patch: Partial<Rec>, imediato = false) => {
-    setRec((atual) => {
-      if (!atual) return atual;
-      const novo = { ...atual, ...patch };
-      salvar(novo, imediato);
-      return novo;
-    });
+    if (!rec) return;
+    const novo = { ...rec, ...patch };
+    setRec(novo);
+    salvar(novo, imediato);
   };
 
   async function autenticar(modo: "entrar" | "criar") {
@@ -262,6 +302,8 @@ export function CuidadoresApp() {
   }
 
   async function sair() {
+    await salvador.current?.flush();
+    salvador.current = null;
     await supabase.auth.signOut();
     setRec(null);
     setEmailLogin("");
@@ -275,24 +317,27 @@ export function CuidadoresApp() {
     setErro("");
     if (step === 1) {
       if (!rec.nome.trim()) return setErro("Digite seu nome completo para continuar.");
-      if (!emailValido(rec.email)) return setErro("Digite um e-mail válido para as famílias entrarem em contato.");
-      if (soDigitos(rec.telefone).length < 10) return setErro("Digite o telefone com DDD, por exemplo (63) 91234-5678.");
+      if (!linkWhatsapp(rec.telefone)) return setErro("Digite seu WhatsApp com DDD, por exemplo (63) 91234-5678.");
     }
     if (step < 5) {
       const s = step + 1;
-      mudar({ passo: Math.max(rec.passo || 1, s) }, true);
+      const proximo = { ...rec, passo: Math.max(rec.passo || 1, s) };
+      setRec(proximo);
+      const ok = await salvar(proximo, true);
+      if (!ok) return setErro("Não foi possível salvar. Seu rascunho foi mantido neste aparelho; tente novamente.");
       setStep(s);
       setVoltou(false);
       window.scrollTo(0, 0);
       return;
     }
-    if (!rec.nome.trim() || !emailValido(rec.email) || soDigitos(rec.telefone).length < 10) {
+    if (!rec.nome.trim() || !linkWhatsapp(rec.telefone)) {
       setStep(1);
-      return setErro("Complete nome, e-mail e telefone para concluir.");
+      return setErro("Complete nome e WhatsApp para concluir.");
     }
     const final = { ...rec, done: true };
+    const ok = await salvar(final, true);
+    if (!ok) return setErro("Não foi possível concluir. Seu rascunho foi mantido; tente novamente.");
     setRec(final);
-    await salvar(final, true);
     await carregarLista();
     setVendo(final);
     ir("pronto");
@@ -387,24 +432,27 @@ export function CuidadoresApp() {
   }
 
   function Texto({ f, rotulo, tipo = "text", cls = "", extra = {} }: { f: keyof Rec; rotulo: string; tipo?: string; cls?: string; extra?: Record<string, unknown> }) {
+    if (!rec) return null;
     return (
       <div className={`campo ${cls}`}>
         <label htmlFor={`f-${f}`}>{rotulo}</label>
-        <input id={`f-${f}`} type={tipo} value={String(rec![f] ?? "")} onChange={(e) => mudar({ [f]: f === "telefone" ? formatarFone(e.target.value) : e.target.value } as Partial<Rec>)} {...extra} />
+        <input id={`f-${f}`} type={tipo} value={String(rec[f] ?? "")} onChange={(e) => mudar({ [f]: f === "telefone" ? formatarFone(e.target.value) : e.target.value } as Partial<Rec>)} {...extra} />
       </div>
     );
   }
   function Area({ f, rotulo, orient, linhas = 5, cls = "full" }: { f: keyof Rec; rotulo: string; orient?: string; linhas?: number; cls?: string }) {
+    if (!rec) return null;
     return (
       <div className={`campo ${cls}`}>
         <label htmlFor={`f-${f}`}>{rotulo}</label>
         {orient && <p className="dica" style={{ marginBottom: 8 }}>{orient}</p>}
-        <textarea id={`f-${f}`} rows={linhas} value={String(rec![f] ?? "")} onChange={(e) => mudar({ [f]: e.target.value } as Partial<Rec>)} />
+        <textarea id={`f-${f}`} rows={linhas} value={String(rec[f] ?? "")} onChange={(e) => mudar({ [f]: e.target.value } as Partial<Rec>)} />
       </div>
     );
   }
   function Grupo({ g, rotulo, opcoes, dica }: { g: "tempo" | "formacao_opc" | "disp_opc"; rotulo: string; opcoes: string[]; dica: string }) {
-    const sel = g === "tempo" ? [rec!.tempo] : rec![g] || [];
+    if (!rec) return null;
+    const sel = g === "tempo" ? [rec.tempo] : rec[g] || [];
     return (
       <fieldset className="grupo full">
         <legend>{rotulo}</legend>
@@ -415,7 +463,7 @@ export function CuidadoresApp() {
               <input type="checkbox" checked={sel.includes(o)} onChange={(e) => {
                 if (g === "tempo") mudar({ tempo: e.target.checked ? o : "" });
                 else {
-                  const arr = (rec![g] || []).filter((v) => v !== o);
+                  const arr = (rec[g] || []).filter((v) => v !== o);
                   if (e.target.checked) arr.push(o);
                   mudar({ [g]: arr } as Partial<Rec>);
                 }
@@ -429,14 +477,15 @@ export function CuidadoresApp() {
   }
 
   function corpoEtapa() {
-    const r = rec!;
+    const r = rec;
+    if (!r) return null;
     if (step === 1)
       return (
         <>
           <div className="foto-linha full">
             <Avatar r={r} />
             <div className="campo">
-              <label htmlFor="foto" style={{ margin: 0 }}>Foto de perfil</label>
+              <label htmlFor="foto" style={{ margin: 0 }}>Foto do currículo (opcional)</label>
               <input ref={fotoRef} id="foto" type="file" accept="image/*" style={{ position: "absolute", opacity: 0, width: 1, height: 1 }} onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
@@ -445,15 +494,14 @@ export function CuidadoresApp() {
                 mudar({ foto: url }, true);
               }} />
               <button className="btn sec" type="button" onClick={() => fotoRef.current?.click()}>{r.foto ? "Trocar foto" : "Escolher foto"}</button>
+              {r.foto && <Button className="btn sec peq" type="button" onClick={() => mudar({ foto: null }, true)}>Remover foto</Button>}
             </div>
           </div>
           {Texto({ f: "nome", rotulo: "Nome completo", cls: "full", extra: { autoComplete: "name" } })}
           {Texto({ f: "idade", rotulo: "Idade", tipo: "number", extra: { inputMode: "numeric", min: 16, max: 99 } })}
           {Texto({ f: "cidade", rotulo: "Cidade", extra: { autoComplete: "address-level2" } })}
           {Texto({ f: "bairro", rotulo: "Bairro" })}
-          {Texto({ f: "email", rotulo: "E-mail para contato", tipo: "email", extra: { autoComplete: "email", placeholder: "seuemail@exemplo.com" } })}
-          {Texto({ f: "telefone", rotulo: "Telefone para contato", tipo: "tel", extra: { autoComplete: "tel", inputMode: "tel", placeholder: "(63) 91234-5678", maxLength: 16 } })}
-          <p className="dica full">O e-mail e o telefone aparecem no seu currículo para as famílias entrarem em contato.</p>
+          {Texto({ f: "telefone", rotulo: "WhatsApp com DDD", tipo: "tel", extra: { autoComplete: "tel", inputMode: "tel", placeholder: "(63) 91234-5678", maxLength: 16 } })}
         </>
       );
     if (step === 2)
@@ -476,6 +524,7 @@ export function CuidadoresApp() {
           </div>
           <div className="barra" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}><i style={{ width: pct + "%" }} /></div>
           <p className="etapa" id="t-etapa">Etapa {step} de 5: {ETAPAS[step - 1]}</p>
+          <div className="linha"><p className="dica" role="status">{estadoSalvo === "salvo" ? "Todas as alterações salvas" : estadoSalvo === "erro" ? "Sem conexão — rascunho guardado neste aparelho" : "Salvando alterações…"}</p>{estadoSalvo === "erro" && <Button variant="outline" type="button" onClick={() => void salvador.current?.flush()}>Tentar salvar novamente</Button>}</div>
           <form onSubmit={proxima} noValidate>
             <div className="form-grid">{corpoEtapa()}</div>
             <p className="erro" role="alert">{erro}</p>
@@ -490,14 +539,15 @@ export function CuidadoresApp() {
   }
 
   function telaPronto() {
-    const link = linkCurriculo(base, rec!.id);
+    if (!rec) return null;
+    const link = linkCurriculo(base, rec.id);
     return (
       <section className="card centro" aria-labelledby="t-pronto">
         <h1 id="t-pronto" className="h1m">Seu currículo está pronto!</h1>
         <Qr texto={link} />
         <p className="apoio"><strong>Mostre este QR code para as famílias abrirem diretamente o seu currículo.</strong></p>
         <div className="linha">
-          <button className="btn" type="button" onClick={() => { if (!baixarQr(link, rec!.nome)) mostrarAviso("Não foi possível baixar o QR code."); }}>Baixar QR code</button>
+          <button className="btn" type="button" onClick={() => { if (!baixarQr(link, rec.nome)) mostrarAviso("Não foi possível baixar o QR code."); }}>Baixar QR code</button>
           <button className="btn sec" type="button" onClick={() => navigator.clipboard?.writeText(link).then(() => mostrarAviso("Link do currículo copiado."), () => mostrarAviso("Não foi possível copiar."))}>Copiar link</button>
           <button className="btn" type="button" onClick={() => rec && setEscolhendo(rec)}>Imprimir / PDF</button>
           <button className="btn sec" type="button" onClick={() => rec && verCurriculo(rec, "pronto")}>Ver meu currículo</button>
@@ -514,7 +564,7 @@ export function CuidadoresApp() {
     const form = juntar([(r.formacao_opc || []).length > 0 && `Formação: ${r.formacao_opc.join(", ")}`, r.cursos && `Cursos: ${r.cursos}`, r.certs && `Certificados e qualificações: ${r.certs}`, r.form_extra]);
     const disp = juntar([(r.disp_opc || []).join(", "), r.disp]);
     const local = [r.cidade, r.bairro].filter(Boolean).join(" · ");
-    const zap = soDigitos(r.telefone);
+    const zap = linkWhatsapp(r.telefone);
     const link = linkCurriculo(base, r.id);
     const ehDono = podeEditarCurriculo(userId, r);
     return (
@@ -537,11 +587,7 @@ export function CuidadoresApp() {
           <button className="btn" type="button" onClick={() => setEscolhendo(r)}>Baixar / imprimir PDF</button>
         </div>
         <Bloco titulo="Contato">
-          <div className="contato">
-            <p><span className="eyebrow">E-mail</span><br />{r.email ? <a href={`mailto:${r.email}`}>{r.email}</a> : <span className="dica">Não informado.</span>}</p>
-            <p><span className="eyebrow">Telefone</span><br />{r.telefone ? <a href={`tel:+55${zap}`}>{r.telefone}</a> : <span className="dica">Não informado.</span>}</p>
-          </div>
-          {zap.length >= 10 && <div className="linha"><a className="btn" href={`https://wa.me/55${zap}`} target="_blank" rel="noreferrer">Chamar no WhatsApp</a>{r.email && <a className="btn sec" href={`mailto:${r.email}`}>Enviar e-mail</a>}</div>}
+          {zap ? <Button asChild className="btn"><a href={zap} target="_blank" rel="noreferrer">Chamar no WhatsApp · {r.telefone}</a></Button> : <p className="dica">WhatsApp não informado.</p>}
         </Bloco>
         <Bloco titulo="Sobre mim" texto={r.sobre} />
         <Bloco titulo="Experiência profissional" texto={exp} />
@@ -557,6 +603,12 @@ export function CuidadoresApp() {
                 <code>{link}</code>
                 <button className="btn peq sec" type="button" onClick={() => navigator.clipboard?.writeText(link).then(() => mostrarAviso("Link do currículo copiado."), () => mostrarAviso("Não foi possível copiar."))}>Copiar link</button>
               </div>
+              <Button className="btn sec" type="button" onClick={async () => {
+                try {
+                  if (navigator.share) await navigator.share({ title: `Currículo de ${r.nome}`, url: link });
+                  else { await navigator.clipboard.writeText(link); mostrarAviso("Link do currículo copiado."); }
+                } catch (e) { if (!(e instanceof Error && e.name === "AbortError")) mostrarAviso("Não foi possível compartilhar agora."); }
+              }}>Compartilhar link</Button>
               <button className="btn sec" type="button" onClick={() => { if (!baixarQr(link, r.nome)) mostrarAviso("Não foi possível baixar o QR code."); }}>Baixar QR code</button>
             </div>
           </div>
@@ -609,8 +661,7 @@ export function CuidadoresApp() {
                       <hr className="div" />
                       <div><p className="eyebrow">Formação</p><p className="cv-tit">{best || sub || "Não informada"}</p>{best && sub && <p className="cv-sub">{sub}</p>}</div>
                       <div className="contato-mini">
-                        {r.telefone && <p>📞 <a href={`tel:+55${soDigitos(r.telefone)}`}>{r.telefone}</a></p>}
-                        {r.email && <p>✉️ <a href={`mailto:${r.email}`}>{r.email}</a></p>}
+                        {linkWhatsapp(r.telefone) && <p><a href={linkWhatsapp(r.telefone) || ""} target="_blank" rel="noreferrer">WhatsApp · {r.telefone}</a></p>}
                       </div>
                       <button className="btn" type="button" onClick={() => verCurriculo(r, "buscar")}>Ver currículo</button>
                     </article>
@@ -642,6 +693,7 @@ export function CuidadoresApp() {
           <nav className="abas" aria-label="Principal">
             <button className="aba" type="button" aria-current={abaAtiva === "inicio" ? "page" : undefined} onClick={() => ir("inicio")}>Início</button>
             <button className="aba" type="button" aria-current={abaAtiva === "buscar" ? "page" : undefined} onClick={() => { carregarLista(); ir("buscar"); }}>Buscar cuidadores</button>
+            {admin && <Button asChild variant="ghost" className="aba"><Link to="/administracao">Administração</Link></Button>}
             {userId && <button className="aba" type="button" onClick={sair}>Sair</button>}
           </nav>
         </header>

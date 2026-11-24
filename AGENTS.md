@@ -30,6 +30,10 @@ use the editor.
 <!-- LOVABLE:END -->
 
 <!-- AGENT-MEMORY:BEGIN -->
-- Login de cuidador é e-mail + senha, com confirmação de e-mail; o currículo usa o e-mail da conta como contato inicial.
-- Currículos ficam na tabela `curriculos` (um por usuário); só `done=true` é público. App inteiro é uma tela em src/components/CuidadoresApp.tsx com estilos em src/cuidadores.css (variáveis prefixadas `--c-` para não colidir com os tokens do shadcn).
+- Store curriculum records in `curriculos` with one record per user and expose only completed rows publicly; owner and administrator policies provide access to hidden drafts.
+- Keep the caregiver wizard in CuidadoresApp and coordination in a separate administration route; scoped CSS variables preserve the existing site theme.
+- Validate administrator privileges through user_roles and authenticated server functions before privileged Auth API operations; never authorize through email or browser storage.
+- Change administrative roles through the transactional set_admin_role function; its lock and last-administrator guard prevent simultaneous removals from leaving no administrator.
+- Serialize autosave writes and keep owner-scoped recovery drafts until the newest write succeeds; stale requests must never overwrite newer input.
+- Render print models from the same curriculum record in a hidden print area; document variants do not duplicate stored data.
 <!-- AGENT-MEMORY:END -->

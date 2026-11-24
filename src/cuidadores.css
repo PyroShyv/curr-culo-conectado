@@ -14,6 +14,11 @@
   --c-danger: #A34235;
   --c-border: #D9E1DA;
   --c-shadow: 0 10px 28px rgba(35, 58, 48, .07);
+  --c-print-ink: #202020;
+  --c-print-muted: #565656;
+  --c-print-border: #bcbcbc;
+  --c-print-paper: #ffffff;
+  --c-print-band: #eeeeee;
   --font: "Segoe UI", Arial, sans-serif;
   color-scheme: light;
 }
@@ -195,11 +200,59 @@ label.op input { width: 21px; height: 21px; margin: 0; flex: none; accent-color:
 .modal-fundo { position: fixed; inset: 0; background: rgba(20,30,25,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 30; }
 .modal { width: min(820px, 100%); max-height: calc(100vh - 32px); overflow: auto; }
 .modelos { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
-.modelo-op { appearance: none; font: inherit; text-align: left; background: white; border: 2px solid var(--c-border); border-radius: 14px; padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; color: var(--c-text); }
+.modelo-op { appearance: none; font: inherit; text-align: left; background: var(--c-surface); border: 2px solid var(--c-border); border-radius: 8px; padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; color: var(--c-text); height: auto; white-space: normal; align-items: stretch; }
 .modelo-op[aria-pressed=true] { border-color: var(--forest); box-shadow: 0 0 0 3px rgba(41,72,61,.15); }
 .miniatura { height: 300px; overflow: hidden; border: 1px solid var(--c-border); border-radius: 8px; background: white; position: relative; }
 .folha { width: 210mm; padding: 14mm; transform: scale(.32); transform-origin: top left; position: absolute; top: 0; left: 0; pointer-events: none; }
 #area-impressao { display: none; }
+
+/* Common, monochrome document models. */
+.cvn { font-family: Arial, sans-serif; color: var(--c-print-ink); background: var(--c-print-paper); font-size: 10pt; line-height: 1.45; }
+.cvn h1 { font-size: 24pt; color: var(--c-print-ink); letter-spacing: 0; overflow-wrap: anywhere; }
+.cvn a { color: var(--c-print-ink); text-decoration: none; }
+.cvn-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 16pt; padding-bottom: 12pt; border-bottom: 2pt solid var(--c-print-ink); }
+.cvn-topo > div { flex: 1; min-width: 0; }
+.cvn-cargo { font-weight: bold; font-size: 12pt; margin: 3pt 0; }
+.cvn-foto { width: 62pt; height: 78pt; flex: none; object-fit: cover; }
+.cvn-sec { padding: 10pt 0; break-inside: avoid; }
+.cvn-sec h2 { font-size: 12pt; letter-spacing: 0; color: var(--c-print-ink); border-bottom: 1pt solid var(--c-print-border); padding-bottom: 3pt; margin-bottom: 5pt; }
+.cvn-sec p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cvn-tradicional { font-family: "Times New Roman", Georgia, serif; font-size: 11pt; }
+.cvn-tradicional h1 { font-size: 26pt; }
+.cvn-essencial .cvn-sec { padding: 7pt 0; }
+.cvn-essencial .cvn-sec h2 { font-size: 10.5pt; text-transform: uppercase; background: var(--c-print-band); border: 0; padding: 4pt 6pt; }
+.cvn-essencial .cvn-topo { border-bottom: 1pt solid var(--c-print-border); }
+.cvn-essencial .cvn-foto { width: 60pt; height: 60pt; }
+.cvc h1, .cvm h1 { overflow-wrap: anywhere; }
+.cvc-topo > div, .cvm-topo > div { min-width: 0; }
+.cvc a, .cvm a { color: inherit; text-decoration: none; }
+.cvm-contato-lista { overflow-wrap: anywhere; }
+
+/* Coordination is an unframed workspace, not a set of nested cards. */
+.c-admin-main { display: flex; flex-direction: column; gap: 22px; }
+.c-admin-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.c-admin-counts { display: flex; gap: 18px 36px; flex-wrap: wrap; padding: 18px 0; border-block: 1px solid var(--c-border); }
+.c-admin-counts strong { font-size: 1.4rem; color: var(--forest); }
+.c-admin-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.c-admin-toolbar { display: flex; gap: 16px; align-items: end; }
+.c-admin-toolbar .campo { flex: 1; }
+.c-admin select { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 8px; padding: 12px; min-height: 50px; }
+.c-admin-table-wrap { overflow-x: auto; }
+.c-admin-table { border-collapse: collapse; width: 100%; text-align: left; font-size: .95rem; }
+.c-admin-table th { background: var(--c-surface-soft); color: var(--forest); }
+.c-admin-table td, .c-admin-table th { padding: 16px 12px; border-bottom: 1px solid var(--c-border); vertical-align: middle; }
+.c-admin-table td { overflow-wrap: anywhere; min-width: 130px; }
+.c-admin-table td:first-child { min-width: 200px; }
+.c-admin-table small { color: var(--c-muted); }
+.c-admin-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 230px; }
+.c-admin-empty { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 48px 16px; text-align: center; }
+.c-admin .modal { max-width: 900px; }
+@media (max-width: 600px) {
+  .c-admin-toolbar { flex-wrap: wrap; }
+  .c-admin-toolbar .campo { flex-basis: 100%; }
+  .c-admin .c-admin-actions button { width: auto; }
+  .modelos { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* ---------- modelo clássico ---------- */
 .cvc { font-family: "Segoe UI", Arial, sans-serif; color: #29352F; font-size: 10.5pt; line-height: 1.5; display: flex; flex-direction: column; gap: 10pt; }

@@ -1,7 +1,15 @@
 import type { Database } from "@/integrations/supabase/types";
+import { Button } from "@/components/ui/button";
+import { linkWhatsapp } from "@/lib/curriculo";
 
 type Rec = Database["public"]["Tables"]["curriculos"]["Row"];
-export type Modelo = "classico" | "minimalista";
+export type Modelo = "classico" | "minimalista" | "tradicional" | "essencial";
+export const MODELOS: Modelo[] = ["classico", "minimalista", "tradicional", "essencial"];
+
+function Contato({ r }: { r: Rec }) {
+  const link = linkWhatsapp(r.telefone);
+  return link ? <a href={link}>WhatsApp: {r.telefone}</a> : null;
+}
 
 const t = (s?: string | null) => (s || "").trim();
 const iniciais = (n: string) => (n || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
@@ -21,7 +29,7 @@ function Classico({ r }: { r: Rec }) {
           {(r.disp_opc || []).length > 0 && <div className="cvc-chips">{r.disp_opc.map((d) => <span key={d}>{d}</span>)}</div>}
         </div>
       </header>
-      <section className="cvc-contato"><p><b>Telefone:</b> {r.telefone}</p><p><b>E-mail:</b> {r.email}</p></section>
+      <section className="cvc-contato"><Contato r={r} /></section>
       {sec("Sobre mim", t(r.sobre))}
       {sec("Experiência profissional", [t(r.tempo) && `Tempo de experiência: ${r.tempo}`, t(r.exp)].filter(Boolean).join("\n"))}
       {sec("Formação e cursos", form)}
@@ -33,7 +41,7 @@ function Classico({ r }: { r: Rec }) {
 
 function Minimalista({ r }: { r: Rec }) {
   const local = [r.cidade, r.bairro].filter(Boolean).join(", ");
-  const contato = [r.telefone && `Tel.: ${r.telefone}`, r.email, local].filter(Boolean);
+  const contato = [local].filter(Boolean);
   const tempoExp = t(r.tempo) && r.tempo !== "Sem experiência profissional" ? r.tempo : "";
 
   // Resumo profissional: combina tempo, sobre, qualidades
@@ -74,6 +82,7 @@ function Minimalista({ r }: { r: Rec }) {
           <h1>{r.nome || "Nome completo"}</h1>
           <p className="cvm-cargo">Cuidador(a) de Idosos</p>
           <div className="cvm-contato-lista">
+            <Contato r={r} />
             {contato.map((c, i) => <span key={i}>{c}</span>)}
           </div>
         </div>
@@ -158,28 +167,42 @@ function Minimalista({ r }: { r: Rec }) {
 }
 
 export function CurriculoImpressao({ r, modelo }: { r: Rec; modelo: Modelo }) {
-  return modelo === "minimalista" ? <Minimalista r={r} /> : <Classico r={r} />;
+  if (modelo === "minimalista") return <Minimalista r={r} />;
+  if (modelo === "classico") return <Classico r={r} />;
+  return <Comum r={r} modelo={modelo} />;
+}
+
+function Comum({ r, modelo }: { r: Rec; modelo: "tradicional" | "essencial" }) {
+  const sec = (nome: string, texto: string) => texto ? <section className="cvn-sec"><h2>{nome}</h2><p>{texto}</p></section> : null;
+  return <article className={`cvn cvn-${modelo}`}>
+    <header className="cvn-topo"><div><h1>{r.nome}</h1><p className="cvn-cargo">Cuidador(a) de idosos</p><p>{[r.cidade, r.bairro, r.idade && `${r.idade} anos`].filter(Boolean).join(" · ")}</p><Contato r={r} /></div>{r.foto && <img className="cvn-foto" src={r.foto} alt={`Foto de ${r.nome}`} />}</header>
+    {sec("Objetivo profissional", "Atuar como cuidador(a) de idosos.")}
+    {sec("Apresentação", t(r.sobre))}
+    {sec("Experiência profissional", [t(r.tempo), t(r.exp)].filter(Boolean).join("\n"))}
+    {sec("Formação e cursos", [(r.formacao_opc || []).join("\n"), t(r.cursos), t(r.certs), t(r.form_extra)].filter(Boolean).join("\n"))}
+    {sec("Habilidades", t(r.habil))}
+    {sec("Disponibilidade", [(r.disp_opc || []).join(", "), t(r.disp)].filter(Boolean).join("\n"))}
+  </article>;
 }
 
 export function EscolherModelo({ r, modelo, setModelo, onFechar, onExportar }: { r: Rec; modelo: Modelo; setModelo: (m: Modelo) => void; onFechar: () => void; onExportar: () => void }) {
-  const ops: [Modelo, string, string][] = [["classico", "Clássico", "Visual do site, tons de verde e foto em destaque."], ["minimalista", "Minimalista Profissional", "Azul-marinho e dourado, ATS-friendly, lista de competências e atividades em tópicos."]];
+  const ops: [Modelo, string][] = [["classico", "Clássico"], ["minimalista", "Minimalista Profissional"], ["tradicional", "Tradicional"], ["essencial", "Essencial"]];
   return (
     <div className="modal-fundo" role="dialog" aria-modal="true" aria-labelledby="t-modelo" onClick={onFechar}>
       <div className="card modal" onClick={(e) => e.stopPropagation()}>
         <h2 id="t-modelo">Escolha o modelo do currículo</h2>
         <div className="modelos">
-          {ops.map(([id, nome, desc]) => (
-            <button key={id} type="button" className="modelo-op" aria-pressed={modelo === id} onClick={() => setModelo(id)}>
-              <div className="miniatura"><div className="folha"><CurriculoImpressao r={r} modelo={id} /></div></div>
+          {ops.map(([id, nome]) => (
+            <Button key={id} type="button" variant="outline" className="modelo-op" aria-label={nome} aria-pressed={modelo === id} onClick={() => setModelo(id)}>
+              <div className="miniatura" aria-hidden="true"><div className="folha"><CurriculoImpressao r={r} modelo={id} /></div></div>
               <strong>{nome}</strong>
-              <span className="dica">{desc}</span>
-            </button>
+            </Button>
           ))}
         </div>
         <p className="dica">Na janela que vai abrir, escolha "Salvar como PDF" para baixar ou selecione uma impressora.</p>
         <div className="linha">
-          <button className="btn sec" type="button" onClick={onFechar}>Cancelar</button>
-          <button className="btn" type="button" onClick={onExportar}>Exportar PDF</button>
+          <Button className="btn sec" type="button" onClick={onFechar}>Cancelar</Button>
+          <Button className="btn" type="button" onClick={onExportar}>Exportar PDF</Button>
         </div>
       </div>
     </div>
