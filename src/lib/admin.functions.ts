@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { criarContaSchema, exigirAdministrador, idSchema, papelSchema } from "./admin-schema";
+import { criarContaSchema, editarUsuarioSchema, exigirAdministrador, idSchema, papelSchema } from "./admin-schema";
 
 export const obterAdministracao = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -86,4 +86,41 @@ export const reenviarConfirmacao = createServerFn({ method: "POST" })
     if (!user.data.user?.email) return { ok: false, mensagem: "Conta não encontrada." };
     const sent = await supabaseAdmin.auth.resend({ type: "signup", email: user.data.user.email });
     return { ok: !sent.error, mensagem: sent.error ? "Não foi possível enviar. Aguarde e tente novamente." : "Confirmação enviada." };
+  });
+
+export const editarUsuario = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => editarUsuarioSchema.parse(input))
+  .handler(async ({ data, context }) => {
+    const role = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
+    exigirAdministrador(!role.error && Boolean(role.data));
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const atual = await supabaseAdmin.auth.admin.getUserById(data.id);
+    if (atual.error || !atual.data.user) return { ok: false, mensagem: "Conta não encontrada." };
+
+    const emailAtual = (atual.data.user.email || "").toLowerCase();
+    const emailAlterado = data.email !== emailAtual;
+    const attrs: { email?: string; email_confirm?: boolean; password?: string } = {};
+    if (emailAlterado) {
+      attrs.email = data.email;
+      attrs.email_confirm = true;
+    }
+    if (data.senha) attrs.password = data.senha;
+    if (!attrs.email && !attrs.password) return { ok: false, mensagem: "Nenhuma alteração informada." };
+
+    const updated = await supabaseAdmin.auth.admin.updateUserById(data.id, attrs);
+    if (updated.error) {
+      return {
+        ok: false,
+        mensagem: /already|registered|exists/i.test(updated.error.message || "")
+          ? "Este e-mail já está em uso por outra conta."
+          : "Não foi possível atualizar a conta. Confira o e-mail e a senha.",
+      };
+    }
+
+    if (emailAlterado) {
+      await supabaseAdmin.from("curriculos").update({ email: data.email }).eq("user_id", data.id);
+    }
+
+    return { ok: true, mensagem: "Dados do usuário atualizados." };
   });

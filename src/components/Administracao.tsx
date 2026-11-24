@@ -1,11 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Plus, RefreshCw, ShieldCheck, Trash2, UserMinus, Users } from "lucide-react";
+import { Pencil, Plus, RefreshCw, ShieldCheck, Trash2, UserMinus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { alterarAdministrador, criarContaManual, excluirCurriculo, obterAdministracao, reenviarConfirmacao } from "@/lib/admin.functions";
-import { criarContaSchema } from "@/lib/admin-schema";
+import { alterarAdministrador, criarContaManual, editarUsuario, excluirCurriculo, obterAdministracao, reenviarConfirmacao } from "@/lib/admin.functions";
+import { criarContaSchema, editarUsuarioSchema } from "@/lib/admin-schema";
 import { CurriculoImpressao, EscolherModelo, type Modelo } from "./CurriculoImpressao";
 
 type Dados = Awaited<ReturnType<typeof obterAdministracao>>;
@@ -15,6 +15,7 @@ const vazio = { nome: "", email: "", senha: "", administrador: false, ativar: fa
 export function Administracao() {
   const consultar = useServerFn(obterAdministracao);
   const criar = useServerFn(criarContaManual);
+  const editar = useServerFn(editarUsuario);
   const papel = useServerFn(alterarAdministrador);
   const excluir = useServerFn(excluirCurriculo);
   const reenviar = useServerFn(reenviarConfirmacao);
@@ -29,6 +30,7 @@ export function Administracao() {
   const [filtro, setFiltro] = useState("todos");
   const [form, setForm] = useState(vazio);
   const [criando, setCriando] = useState(false);
+  const [editando, setEditando] = useState<{ id: string; nome: string; email: string; senha: string } | null>(null);
   const [visualizando, setVisualizando] = useState<Curriculo | null>(null);
   const [escolhendo, setEscolhendo] = useState<Curriculo | null>(null);
   const [modelo, setModelo] = useState<Modelo>("classico");
@@ -72,6 +74,14 @@ export function Administracao() {
     const parsed = criarContaSchema.safeParse(form);
     if (!parsed.success) { setMensagem("Preencha nome, e-mail válido e senha com pelo menos 8 caracteres."); return; }
     if (await agir(() => criar({ data: parsed.data }))) { setForm(vazio); setCriando(false); }
+  }
+
+  async function salvarEdicao(e: FormEvent) {
+    e.preventDefault();
+    if (!editando) return;
+    const parsed = editarUsuarioSchema.safeParse({ id: editando.id, email: editando.email, senha: editando.senha });
+    if (!parsed.success) { setMensagem("Informe um e-mail válido e, se preencher nova senha, use pelo menos 8 caracteres."); return; }
+    if (await agir(() => editar({ data: parsed.data }))) setEditando(null);
   }
 
   function exportar() {
@@ -126,7 +136,7 @@ export function Administracao() {
               const admin = dados.administradores.includes(u.id);
               const r = dados.curriculos.find((c) => c.user_id === u.id);
               return <tr key={u.id}><td>{u.email}{u.id === dados.userId && <small> · Você</small>}</td><td>{r?.nome || "—"}</td><td>{admin ? "Administrador" : "Aluno"}{!u.confirmado && <small> · Aguardando confirmação</small>}</td>
-                <td><div className="c-admin-actions"><Button variant="outline" disabled={ocupado || (admin && dados.administradores.length === 1)} onClick={() => setConfirmacao({ titulo: admin ? "Remover administrador?" : "Adicionar administrador?", detalhe: admin ? "A conta será mantida, mas perderá acesso à coordenação." : "Esta conta poderá ver todos os currículos, excluir currículos e gerenciar administradores.", executar: () => papel({ data: { id: u.id, habilitar: !admin } }) })}>{admin ? <UserMinus /> : <ShieldCheck />}{admin ? "Remover acesso" : "Tornar admin"}</Button>
+                <td><div className="c-admin-actions"><Button variant="outline" disabled={ocupado} onClick={() => { setMensagem(""); setEditando({ id: u.id, nome: r?.nome || u.email, email: u.email, senha: "" }); }}><Pencil />Editar</Button><Button variant="outline" disabled={ocupado || (admin && dados.administradores.length === 1)} onClick={() => setConfirmacao({ titulo: admin ? "Remover administrador?" : "Adicionar administrador?", detalhe: admin ? "A conta será mantida, mas perderá acesso à coordenação." : "Esta conta poderá ver todos os currículos, excluir currículos e gerenciar administradores.", executar: () => papel({ data: { id: u.id, habilitar: !admin } }) })}>{admin ? <UserMinus /> : <ShieldCheck />}{admin ? "Remover acesso" : "Tornar admin"}</Button>
                   {!u.confirmado && <Button variant="outline" disabled={ocupado} onClick={() => void agir(() => reenviar({ data: { id: u.id } }))}>Reenviar confirmação</Button>}
                 </div></td></tr>;
             })}</tbody>
@@ -145,6 +155,16 @@ export function Administracao() {
       <label className="op"><input type="checkbox" checked={form.ativar} onChange={(e) => setForm({ ...form, ativar: e.target.checked })} />Ativar conta imediatamente (cadastro conferido)</label>
       <p role="status" className="erro">{mensagem}</p>
       <div className="linha"><Button variant="outline" disabled={ocupado} type="button" onClick={() => { setCriando(false); setForm(vazio); }}>Cancelar</Button><Button className="btn" disabled={ocupado} type="submit">{ocupado ? "Cadastrando…" : "Salvar cadastro"}</Button></div>
+    </form></div>}
+    {editando && <div className="modal-fundo" role="dialog" aria-modal="true" aria-labelledby="admin-editar"><form className="card modal" onSubmit={salvarEdicao}>
+      <h2 id="admin-editar">Editar usuário</h2>
+      <p className="dica">{editando.nome}</p>
+      <div className="form-grid">
+        <div className="campo full"><label htmlFor="editar-email">E-mail de acesso</label><input id="editar-email" type="email" autoComplete="off" value={editando.email} onChange={(e) => setEditando({ ...editando, email: e.target.value })} required /></div>
+        <div className="campo full"><label htmlFor="editar-senha">Nova senha (opcional)</label><input id="editar-senha" type="password" autoComplete="new-password" minLength={8} placeholder="Deixe em branco para manter a atual" value={editando.senha} onChange={(e) => setEditando({ ...editando, senha: e.target.value })} /></div>
+      </div>
+      {mensagem && <p role="status" className="erro">{mensagem}</p>}
+      <div className="linha"><Button variant="outline" disabled={ocupado} type="button" onClick={() => setEditando(null)}>Cancelar</Button><Button className="btn" disabled={ocupado} type="submit">{ocupado ? "Salvando…" : "Salvar alterações"}</Button></div>
     </form></div>}
     {confirmacao && <div className="modal-fundo" role="alertdialog" aria-modal="true" aria-labelledby="admin-confirmar"><div className="card modal"><h2 id="admin-confirmar">{confirmacao.titulo}</h2><p>{confirmacao.detalhe}</p><div className="linha"><Button variant="outline" disabled={ocupado} onClick={() => setConfirmacao(null)}>Cancelar</Button><Button variant="destructive" disabled={ocupado} onClick={() => void agir(confirmacao.executar)}>{ocupado ? "Aguarde…" : "Confirmar"}</Button></div></div></div>}
     {visualizando && <div className="modal-fundo" role="dialog" aria-modal="true" aria-label="Currículo do aluno"><div className="card modal"><div className="linha"><Button variant="outline" onClick={() => setVisualizando(null)}>Fechar</Button><Button className="btn" onClick={() => { setEscolhendo(visualizando); setVisualizando(null); }}>Baixar / imprimir PDF</Button></div><CurriculoImpressao r={visualizando} modelo="minimalista" /></div></div>}
